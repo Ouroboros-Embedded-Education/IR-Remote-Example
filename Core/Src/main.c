@@ -21,7 +21,11 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <string.h>
+#include <stdio.h>
 
+#include "NEC_Decode.h"
+#include "lcdDisplay.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -44,7 +48,12 @@ TIM_HandleTypeDef htim2;
 DMA_HandleTypeDef hdma_tim2_ch1;
 
 /* USER CODE BEGIN PV */
+NEC nec;
+lcd_t Lcd;
 
+uint8_t flagRec = 0;
+uint16_t IRAddress;
+uint8_t IRCommand;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -59,6 +68,82 @@ static void MX_TIM2_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+/* Callbacks */
+
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim){
+	NEC_TIM_IC_CaptureCallback(&nec);
+}
+
+void NecDecodeCallback (uint16_t address, uint8_t cmd){
+	flagRec = 1;
+	HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+	IRAddress = address;
+	IRCommand = cmd;
+	NEC_Read(&nec);
+}
+
+void NecErrorCallback(){
+	NEC_Read(&nec);
+}
+
+void NecRepeatCallback(){
+	flagRec = 1;
+	HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+	NEC_Read(&nec);
+}
+
+
+/* Auxiliary Fxns */
+void Nec_IC_Start(uint32_t *Arr, uint8_t len){
+	HAL_TIM_IC_Start_DMA(&htim2, TIM_CHANNEL_1, Arr, len);
+}
+
+void Nec_IC_Stop(){
+	HAL_TIM_IC_Stop(&htim2, TIM_CHANNEL_1);
+}
+
+
+/* Init Functions */
+
+void _init_nec(){
+	  nec.timingAgcBoundary = 12500;
+	  nec.timingBitBoundary = 1687;
+	  nec.type = NEC_EXTENDED;
+
+	  nec.NEC_DecodedCallback = NecDecodeCallback;
+	  nec.NEC_ErrorCallback = NecErrorCallback;
+	  nec.NEC_RepeatCallback = NecRepeatCallback;
+
+	  nec.NEC_InCapt_Start = Nec_IC_Start;
+	  nec.NEC_InCapt_Stop = Nec_IC_Stop;
+
+	  NEC_Init(&nec);
+	  NEC_Read(&nec);
+}
+
+void _init_lcd(){
+	Lcd.columns = 16;
+	Lcd.rows = 2;
+	Lcd.font = LCD_FONT_5X8;
+	Lcd.interface = LCD_INTERFACE_4BIT;
+
+	Lcd.gpios[LCD_RS].GPIO = (uint32_t)LCD_RS_GPIO_Port;
+	Lcd.gpios[LCD_RS].pin = LCD_RS_Pin;
+	Lcd.gpios[LCD_E].GPIO = (uint32_t)LCD_E_GPIO_Port;
+	Lcd.gpios[LCD_E].pin = LCD_E_Pin;
+	Lcd.gpios[LCD_D4].GPIO = (uint32_t)LCD_D4_GPIO_Port;
+	Lcd.gpios[LCD_D4].pin = LCD_D4_Pin;
+	Lcd.gpios[LCD_D5].GPIO = (uint32_t)LCD_D5_GPIO_Port;
+	Lcd.gpios[LCD_D5].pin = LCD_D5_Pin;
+	Lcd.gpios[LCD_D6].GPIO = (uint32_t)LCD_D6_GPIO_Port;
+	Lcd.gpios[LCD_D6].pin = LCD_D6_Pin;
+	Lcd.gpios[LCD_D7].GPIO = (uint32_t)LCD_D7_GPIO_Port;
+	Lcd.gpios[LCD_D7].pin = LCD_D7_Pin;
+
+	lcd_init(&Lcd);
+	lcd_send_string_pos(&Lcd, "IR Remote", 0, 0);
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -68,7 +153,7 @@ static void MX_TIM2_Init(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
+	char Text[21];
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -92,6 +177,8 @@ int main(void)
   MX_DMA_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
+  _init_lcd();
+  _init_nec();
 
   /* USER CODE END 2 */
 
@@ -99,6 +186,15 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  if (flagRec == 1){
+		  flagRec = 0;
+		  // TODO Implement LCD Display;
+		  sprintf(Text, "A: 0x%04X C: %02d", IRAddress, IRCommand);
+		  lcd_send_string_pos(&Lcd, Text, 1, 0);
+
+		  HAL_Delay(50);
+		  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+	  }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -248,25 +344,14 @@ static void MX_GPIO_Init(void)
 /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, LCD_D6_Pin|LCD_E_Pin|LCD_D5_Pin|LED_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, LCD_D7_Pin|LCD_D4_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin : LCD_RS_Pin */
-  GPIO_InitStruct.Pin = LCD_RS_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  HAL_GPIO_Init(LCD_RS_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_WritePin(GPIOA, LCD_RS_Pin|LCD_D7_Pin|LCD_D4_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pins : LCD_D6_Pin LCD_E_Pin LCD_D5_Pin */
   GPIO_InitStruct.Pin = LCD_D6_Pin|LCD_E_Pin|LCD_D5_Pin;
@@ -275,8 +360,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : LCD_D7_Pin LCD_D4_Pin */
-  GPIO_InitStruct.Pin = LCD_D7_Pin|LCD_D4_Pin;
+  /*Configure GPIO pins : LCD_RS_Pin LCD_D7_Pin LCD_D4_Pin */
+  GPIO_InitStruct.Pin = LCD_RS_Pin|LCD_D7_Pin|LCD_D4_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
