@@ -1,0 +1,6 @@
+[submodule "lib/lcd"]
+	path = lib/lcd
+	url = git@github.com:Pablo-Jean/lcd-display.git
+[submodule "lib/ir-decode"]
+	path = lib/ir-decode
+	url = git@github.com:Pablo-Jean/NEC-IR-Decode.git
